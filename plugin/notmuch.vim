@@ -168,8 +168,9 @@ function! s:show_prev_msg()
 ruby << EOF
 	r, c = $curwin.cursor
 	n = $curbuf.line_number
-	i = $messages.index { |m| n >= m.start && n < m.end }
-	m = $messages[i - 1] if i > 0
+	messages = $curbuf.messages
+	i = messages.index { |m| n >= m.start && n < m.end }
+	m = messages[i - 1] if i > 0
 	if m
 		fold = VIM::evaluate("foldclosed(#{m.start})")
 		if fold > 0
@@ -192,11 +193,12 @@ ruby << EOF
 
 	r, c = $curwin.cursor
 	n = $curbuf.line_number
-	i = $messages.index { |m| n >= m.start && n < m.end }
+	messages = $curbuf.messages
+	i = messages.index { |m| n >= m.start && n < m.end }
 	i = i + 1
 	found_msg = nil
-	while i < $messages.length and found_msg == nil
-		m = $messages[i]
+	while i < messages.length and found_msg == nil
+		m = messages[i]
 		if matching_tag.length > 0
 			m.tags.each do |tag|
 				if tag == matching_tag
@@ -425,7 +427,7 @@ function! s:show_save_patches()
 ruby << EOF
 	dir = VIM::evaluate('dir')
 	if File.exists?(dir)
-		q = $curbuf.query($cur_thread)
+		q = $curbuf.query($curbuf.cur_thread)
 		t = q.search_threads.first
 		n = 0
 		m = get_message
@@ -580,8 +582,9 @@ ruby << EOF
 
 	thread_id = VIM::evaluate('a:thread_id')
 	msg_id = VIM::evaluate('a:msg_id')
-	$cur_thread = thread_id
-	$messages.clear
+	$curbuf.cur_thread = thread_id
+	messages = $curbuf.messages
+	messages.clear
 	$curbuf.render do |b|
 		q = $curbuf.query(get_cur_view)
 		q.sort = Notmuch::SORT_OLDEST_FIRST
@@ -590,7 +593,7 @@ ruby << EOF
 			m = Mail.read(msg.filename)
 			part = m.find_first_text
 			nm_m = Message.new(msg, m)
-			$messages << nm_m
+			messages << nm_m
 			date_fmt = VIM::evaluate('g:notmuch_datetime_format')
 			date = Time.at(msg.date).strftime(date_fmt)
 			nm_m.start = b.count
@@ -633,7 +636,8 @@ ruby << EOF
 		end
 		b.delete(b.count)
 	end
-	$messages.each_with_index do |msg, i|
+	messages = $curbuf.messages
+	messages.each_with_index do |msg, i|
 		VIM::command("syntax region nmShowMsg#{i}Desc start='\\%%%il' end='\\%%%il' contains=@nmShowMsgDesc" % [msg.start, msg.start + 1])
 		VIM::command("syntax region nmShowMsg#{i}Head start='\\%%%il' end='\\%%%il' contains=@nmShowMsgHead" % [msg.start + 1, msg.full_header_start])
 		VIM::command("syntax region nmShowMsg#{i}Body start='\\%%%il' end='\\%%%dl' contains=@nmShowMsgBody" % [msg.body_start, msg.end])
@@ -641,7 +645,7 @@ ruby << EOF
 			VIM::command("syntax region nmFold#{i}Headers start='\\%%%il' end='\\%%%il' fold transparent contains=@nmShowMsgHead" % [msg.full_header_start, msg.full_header_end])
 		end
 		# Only fold the whole message if there are multiple emails in this thread.
-		if $messages.count > 1 and show_threads_folded
+		if messages.count > 1 and show_threads_folded
 			VIM::command("syntax region nmShowMsgFold#{i} start='\\%%%il' end='\\%%%il' fold transparent contains=ALL" % [msg.start, msg.end])
 		end
 	end
@@ -827,8 +831,6 @@ ruby << EOF
 	$all_emails = []
 	$email = $email_name = $email_address = nil
 	$searches = []
-	$threads = []
-	$messages = []
 	$mail_installed = defined?(Mail)
 
 	def get_config_item(item)
@@ -872,19 +874,19 @@ ruby << EOF
 
 	def get_thread_id
 		n = $curbuf.line_number - 1
-		return "thread:%s" % $threads[n]
+		return "thread:%s" % $curbuf.threads[n]
 	end
 
 	def get_message
 		n = $curbuf.line_number
-		return $messages.find { |m| n >= m.start && n <= m.end }
+		return $curbuf.messages.find { |m| n >= m.start && n <= m.end }
 	end
 
 	def get_cur_view
 		if $cur_filter
-			return "#{$cur_thread} and (#{$cur_filter})"
+			return "#{$curbuf.cur_thread} and (#{$cur_filter})"
 		else
-			return $cur_thread
+			return $curbuf.cur_thread
 		end
 	end
 
@@ -1051,7 +1053,7 @@ ruby << EOF
 		date_fmt = VIM::evaluate('g:notmuch_date_format')
 		q = $curbuf.query(search)
 		q.sort = Notmuch::SORT_NEWEST_FIRST
-		$threads.clear
+		$curbuf.threads.clear
 		t = q.search_threads
 
 		$render = $curbuf.render_staged(t) do |b, items|
@@ -1065,7 +1067,7 @@ ruby << EOF
 					subject = subject.force_encoding('utf-8')
 				end
 				b << "%-12s %3s %-20.20s | %s (%s)" % [date, e.matched_messages, authors, subject, e.tags]
-				$threads << e.thread_id
+				$curbuf.threads << e.thread_id
 			end
 		end
 	end
@@ -1093,8 +1095,7 @@ ruby << EOF
 	end
 
 	module DbHelper
-		def init(name)
-			@name = name
+		def init_dbhelper
 			@db = Notmuch::Database.new($db_name)
 			@queries = []
 		end
@@ -1185,6 +1186,16 @@ ruby << EOF
 
 	class VIM::Buffer
 		include DbHelper
+		attr_accessor :messages, :threads, :cur_thread
+
+
+		def init(name)
+			@name = name
+			@messages = []
+			@threads = []
+
+			init_dbhelper()
+		end
 
 		def <<(a)
 			append(count(), a)
