@@ -60,7 +60,7 @@ end
 
 def get_message
     n = $curbuf.line_number
-    return $curbuf.messages.find { |m| n >= m.start && n <= m.end }
+    return $curbuf.messages.find { |m| n >= m.start && n < m.end }
 end
 
 def get_cur_view
@@ -549,6 +549,57 @@ def rb_show_save_patches(dir)
     end
 end
 
+module NMUtil
+    def goto_line(line)
+        VIM::command("normal #{line}zt")
+    end
+
+    module_function :goto_line
+end
+
+module NMShow
+    FOLD_AUTO    = 0
+    FOLD_ALL     = 1
+    FOLD_HEADERS = 2
+    FOLD_MESSAGE = 3
+
+    def is_folded?(lnr)
+        VIM::evaluate("foldclosed(#{lnr})") > 0
+    end
+
+    def do_fold(from, to)
+        VIM::command("normal #{from}zt")
+        VIM::command("normal zf#{to}G")
+    end
+
+    module_function :is_folded?
+    module_function :do_fold
+end
+
+def rb_show_fold_message(msg, section)
+    case section
+    when NMShow::FOLD_AUTO
+        cur_line = $curbuf.line_number
+        if NMShow::is_folded?(cur_line)
+            VIM::command("foldopen")
+        elsif cur_line >= msg.full_header_start and cur_line <= msg.full_header_end
+            rb_show_fold_message(msg, NMShow::FOLD_HEADERS)
+        else
+            rb_show_fold_message(msg, NMShow::FOLD_MESSAGE)
+        end
+    when NMShow::FOLD_ALL
+        rb_show_fold_message(msg, NMShow::FOLD_HEADERS)
+        rb_show_fold_message(msg, NMShow::FOLD_MESSAGE)
+    when NMShow::FOLD_HEADERS
+        NMUtil::goto_line(msg.full_header_start)
+        NMShow::do_fold(msg.full_header_start, msg.full_header_end-1) if !NMShow::is_folded?($curbuf.line_number)
+    when NMShow::FOLD_MESSAGE
+        NMUtil::goto_line(msg.start)
+        NMShow::do_fold(msg.start, msg.end-1) if !NMShow::is_folded?($curbuf.line_number)
+    end
+end
+
+
 def rb_show(thread_id, msg_id)
     show_full_headers = VIM::evaluate('g:notmuch_show_folded_full_headers')
     show_threads_folded = VIM::evaluate('g:notmuch_show_folded_threads')
@@ -613,11 +664,11 @@ def rb_show(thread_id, msg_id)
         VIM::command("syntax region nmShowMsg#{i}Head start='\\%%%il' end='\\%%%il' contains=@nmShowMsgHead" % [msg.start + 1, msg.full_header_start])
         VIM::command("syntax region nmShowMsg#{i}Body start='\\%%%il' end='\\%%%dl' contains=@nmShowMsgBody" % [msg.body_start, msg.end])
         if show_full_headers
-            VIM::command("syntax region nmFold#{i}Headers start='\\%%%il' end='\\%%%il' fold transparent contains=@nmShowMsgHead" % [msg.full_header_start, msg.full_header_end])
+            rb_show_fold_message(msg, NMShow::FOLD_HEADERS)
         end
         # Only fold the whole message if there are multiple emails in this thread.
-        if messages.count > 1 and show_threads_folded
-            VIM::command("syntax region nmShowMsgFold#{i} start='\\%%%il' end='\\%%%il' fold transparent contains=ALL" % [msg.start, msg.end])
+        if messages.count > 1 and show_threads_folded and !msg.tags.include?('unread')
+            rb_show_fold_message(msg, NMShow::FOLD_ALL)
         end
     end
 end
@@ -817,3 +868,5 @@ class String
 end
 
 get_config
+
+# vim: et sw=4 sts=4 ts=4

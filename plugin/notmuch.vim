@@ -38,6 +38,7 @@ let g:notmuch_show_maps = {
 	\ 'o':		'show_open_msg()',
 	\ 'e':		'show_extract_msg()',
 	\ '<Enter>':	'show_view_magic()',
+	\ 'x':		'show_fold_message()',
 	\ 's':		'show_save_msg()',
 	\ 'p':		'show_save_patches()',
 	\ 'r':		'show_reply()',
@@ -133,6 +134,13 @@ function! s:show_reply()
 	if g:notmuch_compose_start_insert
 		startinsert!
 	end
+endfunction
+
+function! s:show_fold_message()
+ruby << EOF
+	m = get_message()
+	rb_show_fold_message(m, NMShow::FOLD_AUTO)
+EOF
 endfunction
 
 function! s:compose(to_email)
@@ -327,7 +335,7 @@ function! s:show(thread_id, msg_id)
 	ruby rb_show(VIM::evaluate('a:thread_id'), VIM::evaluate('a:msg_id'))
 
 	setlocal nomodifiable
-	setlocal foldmethod=syntax
+	setlocal foldmethod=manual
 	call s:set_map(g:notmuch_show_maps)
 endfunction
 
