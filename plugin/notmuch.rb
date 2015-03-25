@@ -129,16 +129,9 @@ end
 def rb_show_reply(orig)
   reply = orig.reply do |m|
     m.cc = []
-    m.to = []
     email_addr = $email_address
     # Use hashes for email addresses so we can eliminate duplicates.
-    to = Hash.new
     cc = Hash.new
-    if orig[:from]
-      orig[:from].each do |o|
-        to[o.address] = o
-      end
-    end
     if orig[:cc]
       orig[:cc].each do |o|
         cc[o.address] = o
@@ -149,9 +142,6 @@ def rb_show_reply(orig)
         cc[o.address] = o
       end
     end
-    to.each do |e_addr, addr|
-      m.to << addr
-    end
     cc.each do |e_addr, addr|
       if is_our_address(e_addr)
         email_addr = is_our_address(e_addr)
@@ -159,7 +149,6 @@ def rb_show_reply(orig)
         m.cc << addr
       end
     end
-    m.to = m[:reply_to] if m[:reply_to]
     m.from = "#{$email_name} <#{email_addr}>"
     m.charset = 'utf-8'
   end
