@@ -9,7 +9,6 @@ $all_emails = []
 $email = $email_name = $email_address = nil
 $exclude_tags = []
 $searches = []
-$mail_installed = defined?(Mail)
 
 def get_config_item(item)
   result = ''
@@ -156,13 +155,9 @@ def rb_show_reply(orig)
   lines = []
 
   body_lines = []
-  if $mail_installed
-    addr = Mail::Address.new(orig[:from].value)
-    name = addr.name
-    name = addr.local + "@" if name.nil? && !addr.local.nil?
-  else
-    name = orig[:from]
-  end
+  addr = Mail::Address.new(orig[:from].value)
+  name = addr.name
+  name = addr.local + "@" if name.nil? && !addr.local.nil?
   name = "somebody" if name.nil?
 
   body_lines << "%s wrote:" % name
@@ -226,11 +221,7 @@ def search_render(search)
       authors = e.authors.to_utf8.split(/[,|]/).map { |a| author_filter(a) }.join(",")
       date = Time.at(e.newest_date).strftime(date_fmt)
       subject = e.messages.first['subject']
-      if $mail_installed
-        subject = Mail::Field.new("Subject: " + subject).to_s
-      else
-        subject = subject.force_encoding('utf-8')
-      end
+      subject = Mail::Field.new("Subject: " + subject).to_s
       b << "%-12s %3s %-20.20s | %s (%s)" % [date, e.matched_messages, authors, subject, e.tags]
       $curbuf.threads << e.thread_id
     end
@@ -705,7 +696,6 @@ class Message
     @full_header_start = 0
     @full_header_end = 0
     @tags = msg.tags
-    mail.import_headers(msg) if not $mail_installed
   end
 
   def to_s
